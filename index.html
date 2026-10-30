@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Wheel</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      background: #fbeff2;
+      color: #5a2e3a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    h1 { margin: 10px 0 5px; font-size: 2rem; }
+    .subtitle { margin: 0 0 15px; color: #8c5a66; }
+    .wheel-wrap {
+      position: relative;
+      width: min(560px, 92vw);
+      aspect-ratio: 1;
+      cursor: pointer;
+    }
+    .pointer {
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0; height: 0;
+      border-top: 14px solid transparent;
+      border-bottom: 14px solid transparent;
+      border-right: 30px solid #5a2e3a;
+      z-index: 2;
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+    #result {
+      margin-top: 25px;
+      font-size: 20px;
+      min-height: 60px;
+      font-weight: bold;
+      text-align: center;
+      max-width: 700px;
+    }
+    #count { color: #8c5a66; font-size: 14px; }
+    #spinBtn {
+      background: #5a2e3a;
+      color: #fff;
+      border: none;
+      padding: 12px 34px;
+      font-size: 17px;
+      border-radius: 30px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #spinBtn:disabled { background: #b98a7a; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>🎡 Study Wheel</h1>
+  <p class="subtitle">Spin the wheel and study whatever it picks!</p>
+
+  <div class="wheel-wrap" id="wrap">
+    <canvas id="wheel" width="560" height="560"></canvas>
+    <div class="pointer"></div>
+  </div>
+
+  <button id="spinBtn">Spin</button>
+  <div id="result">Click the wheel or press Spin</div>
+  <p id="count"></p>
+
+  <script>
+    // ---------- Build 100,000 topics ----------
+    const subjects = [
+      "Photosynthesis", "World War II", "Python Lists", "Algebra", "The Solar System",
+      "Human Heart", "Shakespeare", "Fractions", "Newton's Laws", "Chemical Bonds",
+      "The Water Cycle", "Cell Division", "The French Revolution", "Ancient Egypt", "Electricity",
+      "Magnetism", "Gravity", "Volcanoes", "Earthquakes", "Climate Change",
+      "Genetics", "DNA", "Evolution", "Ecosystems", "Human Digestion",
+      "The Respiratory System", "The Nervous System", "The Immune System", "Atoms", "The Periodic Table",
+      "Acids and Bases", "Organic Chemistry", "Thermodynamics", "Waves", "Optics",
+      "Sound", "Calculus", "Probability", "Statistics", "Geometry",
+      "Trigonometry", "Linear Equations", "Quadratic Equations", "Matrices", "Logarithms",
+      "Java Loops", "JavaScript Functions", "HTML Forms", "CSS Flexbox", "SQL Joins",
+      "Data Structures", "Binary Trees", "Sorting Algorithms", "Graph Theory", "Operating Systems",
+      "Computer Networks", "Machine Learning", "Neural Networks", "Cloud Computing", "Cybersecurity",
+      "Economics", "Supply and Demand", "Inflation", "Banking", "Accounting",
+      "Marketing", "Management", "Psychology", "Memory", "Learning Theory",
+      "Sociology", "Philosophy", "Logic", "Ethics", "Ancient Rome",
+      "Ancient Greece", "The Mughal Empire", "Indian Independence", "The Renaissance", "The Industrial Revolution",
+      "The Cold War", "World Religions", "World Capitals", "Rivers of the World", "Mountains",
+      "Deserts", "Oceans", "Human Rights", "The Constitution", "Democracy",
+      "English Grammar", "Verb Tenses", "Poetry", "Figures of Speech", "Essay Writing",
+      "Spanish Verbs", "Music Theory", "Painting", "Architecture", "Nutrition",
+      "Vitamins", "Yoga", "First Aid", "Sleep Science", "Astronomy",
+      "Black Holes", "Stars", "Planets", "Moon Phases", "Dinosaurs",
+      "Birds", "Insects", "Plants", "Fungi", "Bacteria"
+    ].slice(0, 100);
+
+    const lenses = [
+      "Basics of", "History of", "Advanced", "Introduction to", "Key facts about",
+      "Common mistakes in", "Examples of", "Quiz on", "Practice problems in", "Summary of",
+      "Causes of", "Future of", "Myths about", "Tools for", "Glossary of",
+      "Theories of", "Case study in", "Key terms in", "Timeline of", "Pros and cons of"
+    ];
+
+    const TOTAL_PARTS = 50;
+    let topics = [];
+    for (const lens of lenses) {
+      for (const subject of subjects) {
+        for (let p = 1; p <= TOTAL_PARTS; p++) {
+          topics.push(`${lens} ${subject} (Part ${p})`);
+        }
+      }
+    }
+    // topics.length === 100 * 20 * 50 = 100,000
+
+    // Optional: if you upload your own topics.txt (one per line), use that instead
+    fetch("topics.txt")
+      .then(r => { if (!r.ok) throw new Error(); return r.text(); })
+      .then(text => {
+        const list = text.split("\n").map(t => t.trim()).filter(Boolean);
+        if (list.length > 0) {
+          topics = list;
+          updateCount();
+        }
+      })
+      .catch(() => {});
+
+    // ---------- Wheel ----------
+    const canvas = document.getElementById("wheel");
+    const ctx = canvas.getContext("2d");
+    const spinBtn = document.getElementById("spinBtn");
+    const resultEl = document.getElementById("result");
+    const countEl = document.getElementById("count");
+    const wrap = document.getElementById("wrap");
+
+    const SLICES = 60;
+    const palette = ["#f7d6dc", "#c98b9b", "#f3e5d8", "#8c5a66", "#e8b4bc", "#d9c7b5", "#fbeff2", "#b98a7a"];
+
+    // Labels shown on the wheel: a sample spread across the full list
+    function visibleLabels() {
+      const step = Math.floor(topics.length / SLICES);
+      const labels = [];
+      for (let i = 0; i < SLICES; i++) labels.push(topics[(i * step) % topics.length]);
+      return labels;
+    }
+    let labels = [];
+    let currentAngle = 0;
+    let spinning = false;
+
+    function updateCount() {
+      countEl.textContent = `Total topics: ${topics.length.toLocaleString()}`;
+      labels = visibleLabels();
+      drawWheel();
+    }
+
+    function drawWheel() {
+      const size = canvas.width;
+      const c = size / 2;
+      const radius = c - 6;
+      const hole = 60;
+      const arc = (2 * Math.PI) / SLICES;
+
+      ctx.clearRect(0, 0, size, size);
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate(currentAngle);
+
+      for (let i = 0; i < SLICES; i++) {
+        const start = i * arc;
+        const end = start + arc;
+
+        // Slice
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, start, end);
+        ctx.arc(0, 0, hole, end, start, true);
+        ctx.closePath();
+        ctx.fillStyle = palette[i % palette.length];
+        ctx.fill();
+
+        // Label (small text along the slice)
+        ctx.save();
+        ctx.rotate(start + arc / 2);
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#5a2e3a";
+        ctx.font = "bold 9px Georgia, serif";
+        const text = labels[i] || "";
+        const shown = text.length > 34 ? text.slice(0, 33) + "…" : text;
+        ctx.fillText(shown, radius - 10, 0);
+        ctx.restore();
+      }
+
+      // Center circle
+      ctx.beginPath();
+      ctx.arc(0, 0, hole, 0, 2 * Math.PI);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.fillStyle = "#c98b9b";
+      ctx.font = "bold 14px Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Click", 0, -8);
+      ctx.fillText("to spin", 0, 10);
+
+      ctx.restore();
+    }
+
+    function spin() {
+      if (spinning || topics.length === 0) return;
+      spinning = true;
+      spinBtn.disabled = true;
+      resultEl.textContent = "Spinning...";
+
+      // The winner is picked from the FULL list of 100,000
+      const chosen = topics[Math.floor(Math.random() * topics.length)];
+
+      const startAngle = currentAngle;
+      const endAngle = startAngle + (6 + Math.random() * 3) * 2 * Math.PI;
+      const duration = 4500;
+      const startTime = performance.now();
+
+      function animate(now) {
+        const progress = Math.min((now - startTime) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 4); // ease-out
+        currentAngle = startAngle + (endAngle - startAngle) * eased;
+        drawWheel();
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          spinning = false;
+          spinBtn.disabled = false;
+          resultEl.textContent = "📚 Study: " + chosen;
+        }
+      }
+      requestAnimationFrame(animate);
+    }
+
+    spinBtn.addEventListener("click", spin);
+    wrap.addEventListener("click", spin);
+
+    labels = visibleLabels();
+    updateCount();
+  </script>
+</body>
+</html>
